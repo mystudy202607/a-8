@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>GPT Tokenizer 从零构建（字幕版）｜从 Unicode 到 BPE，亲手实现大语言模型的分词器 · AI 术语表 ｜ Let's build the GPT Tokenizer</title>
+<meta name="description" content="GPT Tokenizer 从零构建（字幕版）｜从 Unicode 到 BPE，亲手实现大语言模型的分词器 · AI 术语表 — 逐句点读、中英对照、AI 术语标注">
+<style>
+:root{
+  --bg:#fbfbfd; --fg:#1d1d1f; --muted:#6e6e73; --card:#ffffff; --line:#e5e5ea;
+  --accent:#0a84ff; --accent-soft:#eaf3ff; --hl:#fff3bf; --hl-line:#e8b931;
+  --term-bg:#f3ecff; --term-line:#8b5cf6; --active:#fef6c7;
+  --radius:14px; --maxw:880px;
+}
+html[data-theme="dark"]{
+  --bg:#111113; --fg:#e8e8ea; --muted:#98989d; --card:#1b1b1e; --line:#2c2c30;
+  --accent:#4da3ff; --accent-soft:#16283d; --hl:#5a4a00; --hl-line:#d9a800;
+  --term-bg:#241a3a; --term-line:#a78bfa; --active:#3a3200;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:16px; line-height:1.75; -webkit-font-smoothing:antialiased;
+}
+body[data-font="s"]{font-size:15px}
+body[data-font="l"]{font-size:18px}
+body[data-font="xl"]{font-size:20px}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ---------- top bar ---------- */
+.topbar{
+  position:sticky; top:0; z-index:50; backdrop-filter:saturate(180%) blur(14px);
+  background:color-mix(in srgb, var(--bg) 82%, transparent);
+  border-bottom:1px solid var(--line);
+}
+.topbar-in{max-width:var(--maxw); margin:0 auto; padding:8px 16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.brand{font-weight:650; font-size:.92em; letter-spacing:.2px; white-space:nowrap}
+.brand small{display:block; font-weight:400; color:var(--muted); font-size:.78em; letter-spacing:0}
+.bar-spacer{flex:1}
+.btn{
+  appearance:none; border:1px solid var(--line); background:var(--card); color:var(--fg);
+  border-radius:9px; padding:5px 10px; font-size:.82em; cursor:pointer; line-height:1.4;
+  font-family:inherit; transition:background .15s,border-color .15s;
+}
+.btn:hover{border-color:var(--accent); color:var(--accent)}
+.btn.on{background:var(--accent); border-color:var(--accent); color:#fff}
+.btn-group{display:flex; gap:6px; align-items:center}
+
+/* ---------- progress ---------- */
+.progress{height:3px; background:var(--line); position:relative}
+.progress i{display:block; height:100%; width:0; background:var(--accent); transition:width .2s}
+
+/* ---------- hero ---------- */
+main{max-width:var(--maxw); margin:0 auto; padding:26px 18px 120px}
+.hero{display:flex; gap:18px; align-items:flex-start; margin-bottom:8px}
+.hero img{width:190px; flex-shrink:0; border-radius:var(--radius); box-shadow:0 3px 14px rgba(0,0,0,.13)}
+.hero h1{font-size:1.42em; line-height:1.32; margin:0 0 8px; font-weight:650}
+.hero h1 .zh{display:block; font-size:.72em; color:var(--muted); font-weight:500; margin-top:6px}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 0}
+.chip{background:var(--card); border:1px solid var(--line); border-radius:999px; padding:3px 11px; font-size:.78em; color:var(--muted)}
+.chip b{color:var(--fg); font-weight:600}
+.summary{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin:20px 0}
+.summary h2{margin:0 0 10px; font-size:.86em; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); font-weight:600}
+.summary p{margin:0 0 10px; font-size:.92em}
+.summary p:last-child{margin-bottom:0}
+.summary .en{color:var(--muted); font-size:.86em}
+
+/* ---------- toc ---------- */
+.toc{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 18px; margin:18px 0}
+.toc h2{margin:0 0 8px; font-size:.86em; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); font-weight:600}
+.toc ol{margin:0; padding-left:22px; columns:2; column-gap:26px}
+.toc li{margin:3px 0; font-size:.9em; break-inside:avoid}
+.toc a{color:var(--fg)}
+.toc a:hover{color:var(--accent)}
+.toc .t{color:var(--muted); font-size:.85em; margin-left:6px}
+
+/* ---------- toolbar ---------- */
+.toolbar{
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  padding:11px 14px; margin:18px 0; position:sticky; top:52px; z-index:40;
+}
+.toolbar input[type=search]{
+  flex:1; min-width:150px; padding:6px 11px; border:1px solid var(--line); border-radius:9px;
+  background:var(--bg); color:var(--fg); font-family:inherit; font-size:.85em;
+}
+.toolbar input[type=search]:focus{outline:none; border-color:var(--accent)}
+.speed{display:flex; align-items:center; gap:5px; font-size:.8em; color:var(--muted)}
+select{background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:4px 7px; font-family:inherit; font-size:.9em}
+
+/* ---------- transcript ---------- */
+.chapter{margin:38px 0 0; padding-top:8px}
+.chapter h2{
+  font-size:1.06em; font-weight:650; margin:0 0 4px; padding:8px 0 8px 13px;
+  border-left:4px solid var(--accent); scroll-margin-top:110px;
+}
+.chapter .ct{color:var(--muted); font-size:.8em; font-weight:400; margin-left:9px}
+.row{display:flex; gap:12px; align-items:flex-start; padding:4px 0; border-radius:10px}
+.row[hidden]{display:none}
+.row:hover{background:color-mix(in srgb, var(--accent) 5%, transparent)}
+.row.active{background:var(--active); box-shadow:inset 3px 0 0 var(--hl-line)}
+.row.hit{background:var(--accent-soft)}
+.main-col{flex:1; min-width:0}
+.sent{display:flex; gap:9px; align-items:baseline; padding:6px 8px; border-radius:8px; cursor:pointer}
+.sent:hover .play{color:var(--accent); opacity:1}
+.play{
+  flex-shrink:0; width:26px;height:26px; border:1px solid var(--line); background:var(--card);
+  border-radius:50%; cursor:pointer; color:var(--muted); font-size:10px; line-height:1;
+  display:inline-flex; align-items:center; justify-content:center; padding:0;
+  transform:translateY(3px); transition:all .15s;
+}
+.play:hover{border-color:var(--accent); color:var(--accent)}
+.row.active .play{background:var(--hl-line); border-color:var(--hl-line); color:#fff}
+.txt{flex:1; min-width:0}
+.en{display:block}
+.zh{display:block; color:var(--muted); font-size:.9em; margin-top:2px}
+body[data-zh="off"] .zh{display:none}
+.ts{font-variant-numeric:tabular-nums; color:var(--muted); font-size:.76em; margin-right:2px; user-select:none}
+mark{
+  background:var(--hl); color:inherit; padding:1px 3px; border-radius:4px; cursor:help;
+  border-bottom:1.5px dotted var(--hl-line);
+}
+mark.term{background:var(--term-bg); border-bottom-color:var(--term-line)}
+.side{
+  width:210px; flex-shrink:0; background:var(--term-bg); border-left:3px solid var(--term-line);
+  border-radius:8px; padding:7px 11px; font-size:.78em; line-height:1.6; color:var(--fg);
+}
+.side .w{font-weight:650}
+.side .ph{color:var(--muted); font-size:.92em}
+.side .df{color:var(--muted); display:block; margin-top:2px}
+.side .cat{
+  display:inline-block; font-size:.86em; padding:0 6px; border-radius:6px;
+  background:var(--term-line); color:#fff; margin-top:4px;
+}
+.tooltip{
+  position:fixed; z-index:100; max-width:330px; background:var(--card); color:var(--fg);
+  border:1px solid var(--line); border-radius:11px; padding:11px 14px; font-size:.85em;
+  box-shadow:0 8px 30px rgba(0,0,0,.2); pointer-events:none; opacity:0; transition:opacity .13s;
+}
+.tooltip.show{opacity:1}
+.tooltip .w{font-weight:650; font-size:1.06em}
+.tooltip .ph{color:var(--muted)}
+.tooltip .df{display:block; margin-top:6px; line-height:1.6}
+
+/* ---------- vocab page bits ---------- */
+.vgroup{margin:26px 0}
+.vgroup h2{font-size:1em; border-left:4px solid var(--term-line); padding-left:11px; margin-bottom:10px}
+.vlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(255px,1fr)); gap:9px}
+.vcard{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 13px}
+.vcard .w{font-weight:650}
+.vcard .ph{color:var(--muted); font-size:.85em}
+.vcard .df{display:block; color:var(--muted); font-size:.85em; margin-top:3px; line-height:1.55}
+.vcard .cn{color:var(--accent); font-size:.92em}
+
+/* ---------- misc ---------- */
+.kv{position:fixed; right:16px; bottom:16px; z-index:60; display:flex; flex-direction:column; gap:7px}
+.kv .btn{box-shadow:0 4px 14px rgba(0,0,0,.13)}
+.top{font-size:.8em}
+.note{color:var(--muted); font-size:.8em; text-align:center; margin-top:50px; line-height:1.7}
+@media (max-width:720px){
+  .hero{flex-direction:column}
+  .hero img{width:100%; max-width:290px}
+  .toc ol{columns:1}
+  .side{width:auto; margin:4px 0 8px 34px; border-left:none; border-top:3px solid var(--term-line)}
+  .row{flex-direction:column; gap:0}
+}
+@media print{
+  .topbar,.toolbar,.kv,.progress{display:none}
+  body{background:#fff; font-size:11pt}
+  .row{break-inside:avoid}
+  .side{border-left:2px solid #999}
+}
+</style>
+</head>
+<body data-font="m" data-zh="on">
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">GPT Tokenizer 从零构建（字幕版）｜从 Unicode 到 BPE，亲手实现大语言模型的分词器 · AI 术语表<small>AI 术语表</small></div>
+    <div class="bar-spacer"></div>
+    <div class="btn-group">
+      <button class="btn" id="b-zh" title="显示/隐藏中文 (T)">中文</button>
+      <button class="btn" id="b-auto" title="连播开关 (C)">连播</button>
+      <button class="btn" id="b-theme" title="深浅色">◐</button>
+      <button class="btn" id="b-font" title="字号">A</button>
+      <a class="btn" href="vocab.html" title="AI 术语表">术语表</a>
+    </div>
+  </div>
+  <div class="progress"><i id="prog"></i></div>
+</div>
+
+<main>
+  <section class="hero">
+    <img src="thumbnail.jpg" alt="课程缩略图">
+    <div>
+      <h1>Let's build the GPT Tokenizer<span class="zh">GPT Tokenizer 从零构建（字幕版）｜从 Unicode 到 BPE，亲手实现大语言模型的分词器 · AI 术语表</span></h1>
+      <div class="meta">
+        <span class="chip">时长 <b>2:13:35</b></span>
+        <span class="chip">句数 <b>1346</b></span>
+        <span class="chip">术语 <b>25</b></span>
+        <span class="chip">章节 <b>17</b></span>
+        <span class="chip" id="resume-chip" hidden>上次听到 <b id="resume-t">--:--</b></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="summary">
+    <h2>摘要</h2>
+    <p>本讲出现的 25 个词汇，按 5 类整理。</p>
+    <p class="en">25 vocabulary items used in this lecture.</p>
+  </section>
+
+  <nav class="toc" style="display:none">
+    <h2>章节目录</h2>
+    <ol></ol>
+  </nav>
+
+  <div class="toolbar" style="display:none">
+    <input type="search" id="q" placeholder="搜索英文、中文或术语…">
+    <span class="speed">速度
+      <select id="rate">
+        <option value="0.75">0.75×</option>
+        <option value="1" selected>1×</option>
+        <option value="1.25">1.25×</option>
+        <option value="1.5">1.5×</option>
+        <option value="2">2×</option>
+      </select>
+    </span>
+    <span class="speed"><span id="hits">就绪</span></span>
+  </div>
+
+  <audio id="player" preload="none"></audio>
+  <article id="transcript"><section class="vgroup" data-cat="神经网络基础"><h2>神经网络基础 <span class="ct">21 条</span></h2><div class="vlist"><div class="vcard"><span class="w">algorithm</span> <span class="ph">['ælgәriðm]</span><span class="cn">算法</span><span class="df">An effective procedure: a finite sequence of unambiguous steps that, when carried out on a given input, produces the intended output and terminates. The word derives from</span></div><div class="vcard"><span class="w">attention</span> <span class="ph"></span><span class="cn">注意力</span><span class="df">注意力</span></div><div class="vcard"><span class="w">back propagation</span> <span class="ph"></span><span class="cn">反向传播</span><span class="df">反向传播</span></div><div class="vcard"><span class="w">chunk</span> <span class="ph">[tʃʌŋk]</span><span class="cn">词块</span><span class="df">词块</span></div><div class="vcard"><span class="w">data set</span> <span class="ph"></span><span class="cn">数据集</span><span class="df">一组样本 的集合。 Dataset API (tf.data) 一种高级别的 TensorFlow API ，用于读取数据并将其转换为机器学习算法所需的格式。 tf.data.Dataset 对象表示一系列元素，其中每个元素都包含一个或多个张量 。 tf.data.Iterator 对象可获取 Dataset 中的元素。 如需详细了解 D</span></div><div class="vcard"><span class="w">embedding</span> <span class="ph">[em'bediŋ]</span><span class="cn">嵌入</span><span class="df">A learned, meaningful vector-valued representation of a discrete symbol such as a word, mapping it to a low-dimensional dense vector that captures useful features for a n</span></div><div class="vcard"><span class="w">fine tuning</span> <span class="ph"></span><span class="cn">微调</span><span class="df">微调</span></div><div class="vcard"><span class="w">gpt</span> <span class="ph"></span><span class="cn">生成式预训练Transformer模型</span><span class="df">生成式预训练Transformer模型</span></div><div class="vcard"><span class="w">inference</span> <span class="ph">['infәrәns]</span><span class="cn">推断</span><span class="df">在机器学习中，推断通常指以下过程：通过将训练过的模型应用于无标签样本 来做出预测。在统计学中，推断是指在某些观测数据条件下拟合分布参 数的过程。（请参阅维基百科中有关统计学推断的文章 (https://en.wikipedia.org/wiki/Statistical_inference)。）</span></div><div class="vcard"><span class="w">layer</span> <span class="ph">['leiә]</span><span class="cn">层</span><span class="df">神经网络 中的一组神经元 ，负责处理一组输入特征，或一组神经元 的输出。 此外还指 TensorFlow 中的抽象层。层是 Python 函数，以张量 和配置选项作为输 入，然后生成其他张量作为输出。当必要的张量组合起来后，用户便可以通过模型函数 将结果转换为 Estimator 。 Layers API (tf.layers) 一种 T</span></div><div class="vcard"><span class="w">llm</span> <span class="ph"></span><span class="cn">大语言模型</span><span class="df">大语言模型</span></div><div class="vcard"><span class="w">neural network</span> <span class="ph"></span><span class="cn">神经网络</span><span class="df">一种模型，灵感来源于脑部结构，由多个层构成（至少有一个是隐藏层 ），每 个层都包含简单相连的单元或神经元 （具有非线性关系）。</span></div><div class="vcard"><span class="w">operation</span> <span class="ph"></span><span class="cn">运算</span><span class="df">运算</span></div><div class="vcard"><span class="w">parameter</span> <span class="ph">[pә'ræmitә]</span><span class="cn">参数</span><span class="df">机器学习系统自行训练的模型的变量。例如，权重 就是一种参数，它们的值是机器 学习系统通过连续的训练迭代逐渐学习到的。与超参数 相对。</span></div><div class="vcard"><span class="w">recall</span> <span class="ph">[ri'kɒ:l]</span><span class="cn">召回率</span><span class="df">一种分类模型 指标，用于回答以下问题：在所有可能的正类别标签中， 模型正确地识别出了多少个？即：</span></div><div class="vcard"><span class="w">representation</span> <span class="ph">[.reprizen'teiʃәn]</span><span class="cn">表示法</span><span class="df">将数据映射到实用特征 的过程。 小损失程 正则程 受试者工作特征曲线（ receiver operating characteristic ，简称 ROC 曲线） 不同分类阈值 下的正例率 和假正例率 构成的曲 线。另请参阅曲线下面积 。</span></div><div class="vcard"><span class="w">tokenization</span> <span class="ph"></span><span class="cn">标记化</span><span class="df">标记化</span></div><div class="vcard"><span class="w">training</span> <span class="ph">['treiniŋ]</span><span class="cn">训练</span><span class="df">确定构成模型的理想参数 的过程。</span></div><div class="vcard"><span class="w">training data</span> <span class="ph"></span><span class="cn">训练数据</span><span class="df">训练数据</span></div><div class="vcard"><span class="w">training set</span> <span class="ph"></span><span class="cn">训练集</span><span class="df">数据集的子集，用于训练模型。 与验证集 和测试集 相对。</span></div><div class="vcard"><span class="w">transformer</span> <span class="ph">[træns'fɒ:mә]</span><span class="cn">Transformer 中文为“变换器”，但不够达雅，日常还是称英文</span><span class="df">Transformer 中文为“变换器”，但不够达雅，日常还是称英文</span></div></div></section><section class="vgroup" data-cat="数学与微积分"><h2>数学与微积分 <span class="ct">2 条</span></h2><div class="vlist"><div class="vcard"><span class="w">distribution</span> <span class="ph"></span><span class="cn">分布</span><span class="df">分布</span></div><div class="vcard"><span class="w">vector</span> <span class="ph"></span><span class="cn">向量</span><span class="df">向量</span></div></div></section><section class="vgroup" data-cat="代码与工程"><h2>代码与工程 <span class="ct">2 条</span></h2><div class="vlist"><div class="vcard"><span class="w">dataset</span> <span class="ph"></span><span class="cn">数据集</span><span class="df">数据集</span></div><div class="vcard"><span class="w">implementation</span> <span class="ph"></span><span class="cn">实现</span><span class="df">实现</span></div></div></section><div class="toolbar" id="vfilter"><a class="btn" href="index.html">← 返回文稿</a><button class="btn on" data-f="*">全部 25</button><button class="btn" data-f="神经网络基础">神经网络基础 21</button><button class="btn" data-f="数学与微积分">数学与微积分 2</button><button class="btn" data-f="代码与工程">代码与工程 2</button></div><script>(function(){var b=document.getElementById('vfilter');b.addEventListener('click',function(e){var t=e.target.closest('button[data-f]');if(!t)return;var f=t.getAttribute('data-f');b.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===t);});document.querySelectorAll('.vgroup').forEach(function(g){g.hidden=(f!=='*'&&g.getAttribute('data-cat')!==f);});});})();</script></article>
+
+  <p class="note">
+    点击任意句子从该处播放 · <kbd>空格</kbd> 播放/暂停 · <kbd>T</kbd> 中文 · <kbd>C</kbd> 连播 ·
+    <kbd>↑</kbd><kbd>↓</kbd> 上下句 · <kbd>Esc</kbd> 停止<br>
+    字幕由 ASR 转录并经 AI 校正重译，术语释义仅供参考。
+  </p>
+</main>
+
+<div class="kv">
+  <button class="btn top" id="b-top" title="回到顶部">↑</button>
+</div>
+<div class="tooltip" id="tip"></div>
+
+<script>
+var DATA=[];var TERMS={};
+</script>
+<script>
+
+</script>
+</body>
+</html>
